@@ -17,6 +17,7 @@ import datetime
 import os.path
 import string
 import pandas as pd
+import collections
 
 def reader(bytes):
     return lambda fh: fh.read(bytes)
@@ -187,23 +188,33 @@ def map_record(record, fmt):
     return out
     
 class MSFile(object):
+
     def __init__(self, in_file,fmt):
-        if isinstance(in_file, file):
-            self.fh = in_file
+        self.fh = None
+        self.in_file = None
+        self.cur_record = 0
+        self.record_count = 0
+
+        if isinstance(self.in_file, file):
+            self.fh = self.in_file
         else:
-            self.fh = open(in_file,'rb')
+            self.in_file = in_file
+
         self.fmt = fmt
-        self.setup()
-    
+
     def setup(self):
+        if not self.fh:
+            self.fh = open(self.in_file,'rb')
+
         self.fh.seek(0)
         fmt = self.fmt.header
         self.cur_record = 0
         self.record_count = map_record(fmt.read(self.fh),fmt)['record_count']
-    
+
     def __iter__(self):
-        #~ self.fh.seek(0)
-        #~ self.cur_record = 0
+        if not self.fh:
+            self.fh = open(self.in_file,'rb')
+
         self.setup()
         return (self)
     
@@ -278,16 +289,20 @@ class MSDirectory:
                 raise Exception("Invalid Path")
             self.path = path if (path[-1] == '/') else path + '/'
             self.emaster = MSEMasterFile(self.path + 'emaster')
+            self.emaster.setup()
             self.record_count = self.emaster.record_count
             self.xmaster = None
             if os.path.exists(self.path + 'xmaster'):
                 self.xmaster = MSXMasterFile(self.path + 'xmaster')
+                self.xmaster.setup()
                 self.record_count += self.xmaster.record_count
         except Exception as e:
             raise e
-    
+
+    def __len__(self):
+        return self.record_count
+
     def __iter__(self):
-        self.emaster.setup()
         if (self.xmaster != None):
             self.xmaster.setup()
         return(self)
@@ -318,7 +333,41 @@ class MSDirectory:
     
     def __repr__(self):
         return "MSDirectory :\n" + self.path
-        
+
+class RecursiveIndex(collections.Mapping):
+    def __init__(self, path):
+        try:
+            if os.path.exists(path) == False:
+                raise Exception("Invalid Path")
+            self.symbols = {}
+            self.record_count = 0
+            self.__searchHierarchy__(path)
+        except:
+            raise
+
+    def __len__(self):
+        return self.record_count
+
+    def __iter__(self):
+        for stock in self.symbols:
+            yield stock
+
+    def __getitem__(self, symbol):
+        return self.symbols[symbol]
+
+    def __searchHierarchy__(self, path):
+        if os.path.isdir(path):
+            emaster_path = os.path.join(path, 'EMASTER')
+            if os.path.exists(emaster_path) and os.path.isfile(emaster_path):
+                directory = MSDirectory(path)
+                for stock in directory:
+                    self.symbols[stock.symbol] = stock
+
+                self.record_count += directory.record_count
+
+            for f in os.listdir(path):
+                self.__searchHierarchy__(os.path.join(path, f))
+
 class PremiumDataExchange(dict):
     
     folders = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
