@@ -271,7 +271,7 @@ class MSStock(MSDATFile):
         daily_close = {}
 
         for daily_prices in self:
-            date = daily_prices['date']
+            date = pd.Timestamp(daily_prices['date'])
             daily_open[date] = daily_prices['open']
             daily_high[date] = daily_prices['high']
             daily_low[date] = daily_prices['low']
@@ -279,6 +279,7 @@ class MSStock(MSDATFile):
             daily_vol[date] = daily_prices['volume']
 
         df = pd.DataFrame({'Volume': pd.Series(daily_vol, name="Volume"), 'Open': pd.Series(daily_open, name="Open"), 'High': pd.Series(daily_high, name="High"), 'Low': pd.Series(daily_low, name="Low"), 'Close': pd.Series(daily_close, name="Close")})
+        df.index.name = "Date"
         return df[["Open", "High", "Low", "Close", "Volume"]]
 
         
