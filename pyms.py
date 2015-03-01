@@ -16,6 +16,7 @@ import struct
 import datetime
 import os.path
 import string
+import pandas as pd
 
 def reader(bytes):
     return lambda fh: fh.read(bytes)
@@ -250,6 +251,25 @@ class MSStock(MSDATFile):
     
     def __repr__(self):
         return 'MSStock :\n' + self.symbol + ' (' + self.name + ')'
+
+    def to_dataframe(self):
+        daily_vol = {}
+        daily_open = {}
+        daily_high = {}
+        daily_low = {}
+        daily_close = {}
+
+        for daily_prices in self:
+            date = daily_prices['date']
+            daily_open[date] = daily_prices['open']
+            daily_high[date] = daily_prices['high']
+            daily_low[date] = daily_prices['low']
+            daily_close[date] = daily_prices['close']
+            daily_vol[date] = daily_prices['volume']
+
+        df = pd.DataFrame({'Volume': pd.Series(daily_vol, name="Volume"), 'Open': pd.Series(daily_open, name="Open"), 'High': pd.Series(daily_high, name="High"), 'Low': pd.Series(daily_low, name="Low"), 'Close': pd.Series(daily_close, name="Close")})
+        return df[["Open", "High", "Low", "Close", "Volume"]]
+
         
 class MSDirectory:
     def __init__(self, path):
