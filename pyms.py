@@ -12,12 +12,14 @@ GPL Licensed : Please read the enclosed license in COPYING
 
 """
 
-import struct
+import collections
 import datetime
 import os.path
-import string
+import struct
+from io import IOBase
+
 import pandas as pd
-import collections
+
 
 def reader(bytes):
     return lambda fh: fh.read(bytes)
@@ -30,7 +32,7 @@ def clampindex(idx, size):
     if ((idx > size - 1) | (idx < 0)):
         raise IndexError('index out of range')
     return idx
-    
+
 
 def fmsbin2ieee(bytes):
     """
@@ -40,17 +42,18 @@ def fmsbin2ieee(bytes):
     as_int = struct.unpack("i", bytes)
     if not as_int:
         return 0.0
-    man = long(struct.unpack('H', bytes[2:])[0])
+    man = int(struct.unpack('H', bytes[2:])[0])
     if not man:
         return 0.0
     exp = (man & 0xff00) - 0x0200
     man = man & 0x7f | (man << 8) & 0x8000
     man |= exp >> 1
 
-    bytes2 = bytes[:2]
-    bytes2 += chr(man & 255)
-    bytes2 += chr((man >> 8) & 255)
-    return struct.unpack("f", bytes2)[0]
+    bytes2 = bytearray(bytes[:2])
+    bytes2.append(man & 255)
+    bytes2.append((man >> 8) & 255)
+    f = struct.unpack("f", bytes2)
+    return f[0]
 
 def float2date(date):
     """
@@ -58,8 +61,8 @@ def float2date(date):
     Here we convert it to a python datetime.date object.
     """
     date = int(date)
-    year = 1900 + (date / 10000)
-    month = (date % 10000) / 100
+    year = int(1900 + (date / 10000))
+    month = int((date % 10000) / 100)
     day = date % 100
     return datetime.date(year, month, day)
 
@@ -83,7 +86,7 @@ def int2date(in_date):
 def c_uchar(x): return struct.unpack("B",x)[0]
 def c_ushort(x): return struct.unpack("H",x)[0]
 def c_uint(x): return struct.unpack("I",x)[0]
-def ms_str(x): return x.strip('\x00 \t\nda')
+def ms_str(x): return x.strip('\x00 \t\nda'.encode())
 def ms_em_date(x): return float2date(struct.unpack("f",x)[0])
 def ms_xm_date(x): return int2date(struct.unpack("I",x)[0])
 def ms_dat_date(x): return float2date(fmsbin2ieee(x))
@@ -195,7 +198,7 @@ class MSFile(object):
         self.cur_record = 0
         self.record_count = 0
 
-        if isinstance(self.in_file, file):
+        if isinstance(self.in_file, IOBase):
             self.fh = self.in_file
         else:
             self.in_file = in_file
@@ -218,7 +221,7 @@ class MSFile(object):
         self.setup()
         return (self)
     
-    def next(self):
+    def __next__(self):
         if (self.cur_record >= self.record_count):
             raise StopIteration
         else:
@@ -261,7 +264,7 @@ class MSStock(MSDATFile):
         super(MSStock,self).__init__(filename)
     
     def __repr__(self):
-        return 'MSStock :\n' + self.symbol + ' (' + self.name + ')'
+        return 'MSStock :\n' + self.symbol.decode() + ' (' + self.name.decode() + ')'
 
     def to_dataframe(self):
         daily_vol = {}
@@ -308,14 +311,14 @@ class MSDirectory:
             self.xmaster.setup()
         return(self)
     
-    def next(self):
+    def __next__(self):
         try:
-            result = self.emaster.next()
+            result = self.emaster.__next__()
             return(MSStock(result,self.path))
         except StopIteration:
             try:
                 if (self.xmaster != None):
-                    result = self.xmaster.next()
+                    result = self.xmaster.__next__()
                     return(MSStock(result,self.path))
             except StopIteration:
                 pass
@@ -362,7 +365,7 @@ class RecursiveIndex(collections.Mapping):
             if os.path.exists(emaster_path) and os.path.isfile(emaster_path):
                 directory = MSDirectory(path)
                 for stock in directory:
-                    self.symbols[stock.symbol] = stock
+                    self.symbols[stock.symbol.decode()] = stock
 
                 self.record_count += directory.record_count
 
